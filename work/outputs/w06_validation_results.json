@@ -1,0 +1,49 @@
+{
+  "model": "random_forest (Week-5 ranker)",
+  "n_clients": 32,
+  "n_test_clients_client_holdout": 6,
+  "seed": 42,
+  "splits": {
+    "after_client_holdout": {
+      "base_rate": 0.6171924624179547,
+      "metrics": {
+        "avg_precision": 0.7124353561893861,
+        "p@10": 0.8,
+        "p@20": 0.9,
+        "p@5": 0.8,
+        "p@50": 0.9,
+        "roc_auc": 0.6588485139422274
+      }
+    },
+    "after_groupkfold_5fold": {
+      "base_rate": 0.5444050660709328,
+      "fold_base_rates": [
+        0.49,
+        0.645,
+        0.379,
+        0.622,
+        0.585
+      ],
+      "metrics": {
+        "avg_precision": 0.6796208542279216,
+        "p@10": 0.5,
+        "p@20": 0.45,
+        "p@5": 0.6,
+        "p@50": 0.6,
+        "roc_auc": 0.6865798926513413
+      }
+    },
+    "before_random_split": {
+      "base_rate": 0.542,
+      "metrics": {
+        "avg_precision": 0.7669308273258899,
+        "p@10": 0.8,
+        "p@20": 0.9,
+        "p@5": 0.6,
+        "p@50": 0.9,
+        "roc_auc": 0.7580169005838531
+      }
+    }
+  },
+  "target": "is_declining_label"
+}
