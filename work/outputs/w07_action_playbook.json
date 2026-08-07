@@ -1,0 +1,48 @@
+{
+  "actionable_declining_rate": 0.601,
+  "actionable_p50": 0.7,
+  "actionable_rows": 9165,
+  "base_rate": 0.542,
+  "decay_observed": {
+    "0-30": [
+      10063,
+      0.583
+    ],
+    "181+": [
+      17,
+      0.941
+    ],
+    "31-90": [
+      88,
+      0.523
+    ],
+    "91-180": [
+      6558,
+      0.616
+    ]
+  },
+  "export_csv": "work/outputs/w07_action_queue.csv",
+  "no_go_top3_declining_visible": 339,
+  "no_position_rows": 1205,
+  "queue_p10": 0.5,
+  "queue_p100": 0.67,
+  "queue_p50": 0.6,
+  "refresh_high_priority": {
+    "count": 14,
+    "declining_rate": 0.929
+  },
+  "status": "generated",
+  "target": "is_declining_label",
+  "trigger_yardsticks": {
+    "base_rate_band": [
+      0.54,
+      0.59
+    ],
+    "no_position_rows": 1205,
+    "precision@50_floor": 0.55,
+    "score_p90_threshold": 0.698133946591327,
+    "stale_visible_count": 17
+  },
+  "validated_oof_avg_precision": 0.68,
+  "validated_oof_roc_auc": 0.687
+}
