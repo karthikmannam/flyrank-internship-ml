@@ -48,19 +48,19 @@
 
 <section>
   <h2 id="abstract">Abstract</h2>
-  <div class="abstract">
-    <p>Search content quietly decays — rankings slip, clicks drop, and most teams notice too late — so the useful decision is <em>which page should a human fix first</em>. This paper asks whether a learned model can rank pages by observed decline better than the transparent hand-written rule FlyRank already uses.</p>
-    <p>We analyze the <strong>FlyRank ML Internship dataset</strong> (30,000 pseudonymized content items across 32 clients, trailing-90-day search and engagement metrics), labeling a page as declining when its recent impressions trended down.</p>
-    <p>Method: a Random Forest ranker (18 numeric + 8 categorical features, no label-derived or ID columns) is compared on the same client-holdout split against the baseline rule, with a grouped 5-fold robustness check.</p>
-    <p>On held-out clients the model places <strong>74% truly-declining pages at the top 50 of the queue</strong> vs <strong>24% for the rule</strong> (base rate 54.2%), a ~3× lift in top-of-queue precision; ROC AUC 0.75 vs 0.63.</p>
-    <p>This is a decision-support screen for editors — a ranked, reason-tagged review queue — not a forecast of Google and not a guarantee that editing any single page will lift it.</p>
+<div class="abstract">
+    <p>FlyRank builds content as infrastructure: it publishes pages for its clients, then watches search data and optimizes — yet every published page quietly decays over time, and with thousands of pages in play the decision that matters is <em>which page should be fixed first</em>.</p>
+    <p>This study asks whether a learned model can rank declining pages for that decision better than the transparent hand-written rule FlyRank already runs in production, using the <strong>FlyRank ML Internship dataset</strong> (30,000 pseudonymized content items across 32 clients, trailing-90-day search and engagement metrics; 54.2% labeled declining from an observed trend).</p>
+    <p>Method: a Random Forest ranker (18 numeric + 8 categorical features, no label-derived or identifier columns) is compared on the same client-holdout split against the baseline rule, with a grouped 5-fold robustness check.</p>
+    <p>On never-seen clients the model places <strong>74% truly-declining pages at the top 50 of the queue</strong> vs <strong>24% for the rule</strong> (base rate 54.2%) — a ~3× top-of-queue lift — with ROC AUC 0.75 vs 0.63.</p>
+    <p>The output is a decision-support review queue for FlyRank's optimization cycle — ranked, reason-tagged, human-gated — not a forecast of Google and not a promise that editing any single page will lift it.</p>
   </div>
 </section>
 
 <section>
   <h2 id="introduction">1. Introduction / problem statement</h2>
-  <p>FlyRank publishes content into client sites, then watches search data and optimizes. The product already flags pages with hand-written rules — if a page is visible but stale, or slipping, a threshold trips. Those rules work, but they are a fixed lens: they cannot see how the same page looks <em>through many signals at once</em>.</p>
-  <p>Concretely: an editor opens a dashboard holding 30,000 pages and must decide which one to review <strong>first</strong>. That is a ranking problem, and its cost is real — a wrong call means editing the wrong page while the right one keeps sliding.</p>
+  <p>FlyRank is content as infrastructure: it researches, writes, and publishes pages straight into a client's website, then watches search data and optimizes — the full cycle run by algorithms rather than people doing it by hand. The product already flags pages today with hand-written rules — if a page is visible but stale, or its position is slipping, a threshold trips. Those rules work and run in production, but they are a fixed lens: they cannot weigh visibility, staleness, position, and engagement all at once the way a trained model can. That gap — a learned model where a fixed rule currently lives — is exactly where this capstone sits.</p>
+  <p>Concretely, the decision in one scenario: an editor opens a dashboard holding 30,000 pages and must choose which one to review <strong>first</strong>. A wrong call means editing the wrong page while the right one keeps sliding — a wasted hour and a missed decline. This is a ranking problem on messy, real search data, which is where a learned model can beat a fixed rule.</p>
   <p>The question this paper answers: <em>does a model trained on observed signals rank declining pages at the top of a reviewer queue better than the existing rule, and is the gain honest when validated on never-seen clients?</em> The unit of analysis is the content page; the output is a 0–100 refresh score; the human action is "open this page and decide"; the cost of a wrong call is wasted editorial effort or a missed decline.</p>
 </section>
 
