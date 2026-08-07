@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ranking which content to refresh first — a data study of declining pages</title>
+<meta name="description" content="A research paper: can a learned model rank declining pages better than a hand-written rule? Built on the FlyRank ML Internship dataset.">
+<style>
+  :root{--ink:#16232a;--mut:#54676f;--line:#dbe2e6;--accent:#4E79A7;--soft:#f6f8f9;}
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:Georgia,"Times New Roman",serif;color:var(--ink);line-height:1.65;background:#fff;}
+  .wrap{max-width:860px;margin:0 auto;padding:40px 22px 80px;}
+  header{border-bottom:3px solid var(--ink);padding-bottom:18px;margin-bottom:8px;}
+  .kicker{font-family:Verdana,Arial,sans-serif;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);}
+  h1{font-size:34px;line-height:1.2;margin:10px 0 6px;}
+  .byline{font-family:Verdana,Arial,sans-serif;font-size:13px;color:var(--mut);}
+  h2{font-family:Verdana,Arial,sans-serif;font-size:20px;margin:44px 0 8px;padding-top:14px;border-top:1px solid var(--line);}
+  h3{font-family:Verdana,Arial,sans-serif;font-size:15px;margin:22px 0 6px;}
+  p{margin:0 0 12px;}
+  ul,ol{margin:0 0 12px;padding-left:22px;}
+  li{margin:0 0 6px;}
+  .abstract{background:var(--soft);border-left:4px solid var(--accent);padding:16px 18px;font-size:16px;}
+  .abstract p{margin:0 0 10px;}
+  .abstract p:last-child{margin:0;}
+  table{border-collapse:collapse;width:100%;margin:14px 0 6px;font-family:Verdana,Arial,sans-serif;font-size:13.5px;}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:right;}
+  th{background:var(--soft);font-weight:600;}
+  td:first-child,th:first-child{text-align:left;}
+  figure{margin:18px 0;text-align:center;}
+  figure svg{width:100%;height:auto;max-width:680px;border:1px solid var(--line);background:#fff;}
+  figcaption{font-family:Verdana,Arial,sans-serif;font-size:13px;color:var(--mut);margin-top:8px;text-align:left;}
+  .callout{background:#fbf4f6;border-left:4px solid #B07AA1;padding:12px 16px;margin:14px 0;font-family:Verdana,Arial,sans-serif;font-size:14px;}
+  .credit{background:var(--soft);padding:16px 18px;margin-top:34px;border-radius:4px;font-family:Verdana,Arial,sans-serif;font-size:13.5px;}
+  code{font-family:Consolas,Menlo,monospace;font-size:12.5px;background:var(--soft);padding:1px 4px;border-radius:3px;}
+  a{color:var(--accent);}
+  .note{font-size:13px;color:var(--mut);}
+  @media(max-width:560px){h1{font-size:26px;}h2{font-size:17px;}.wrap{padding:24px 14px 60px;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">Machine Learning Capstone · Research Paper</div>
+  <h1>Ranking which content to refresh first: a data study of declining search pages</h1>
+  <div class="byline">Machine Learning Track · Week 8 (ML-11) · Built on the FlyRank ML Internship dataset</div>
+</header>
+
+<section>
+  <h2 id="abstract">Abstract</h2>
+  <div class="abstract">
+    <p>Search content quietly decays — rankings slip, clicks drop, and most teams notice too late — so the useful decision is <em>which page should a human fix first</em>. This paper asks whether a learned model can rank pages by observed decline better than the transparent hand-written rule FlyRank already uses.</p>
+    <p>We analyze the <strong>FlyRank ML Internship dataset</strong> (30,000 pseudonymized content items across 32 clients, trailing-90-day search and engagement metrics), labeling a page as declining when its recent impressions trended down.</p>
+    <p>Method: a Random Forest ranker (18 numeric + 8 categorical features, no label-derived or ID columns) is compared on the same client-holdout split against the baseline rule, with a grouped 5-fold robustness check.</p>
+    <p>On held-out clients the model places <strong>74% truly-declining pages at the top 50 of the queue</strong> vs <strong>24% for the rule</strong> (base rate 54.2%), a ~3× lift in top-of-queue precision; ROC AUC 0.75 vs 0.63.</p>
+    <p>This is a decision-support screen for editors — a ranked, reason-tagged review queue — not a forecast of Google and not a guarantee that editing any single page will lift it.</p>
+  </div>
+</section>
+
+<section>
+  <h2 id="introduction">1. Introduction / problem statement</h2>
+  <p>FlyRank publishes content into client sites, then watches search data and optimizes. The product already flags pages with hand-written rules — if a page is visible but stale, or slipping, a threshold trips. Those rules work, but they are a fixed lens: they cannot see how the same page looks <em>through many signals at once</em>.</p>
+  <p>Concretely: an editor opens a dashboard holding 30,000 pages and must decide which one to review <strong>first</strong>. That is a ranking problem, and its cost is real — a wrong call means editing the wrong page while the right one keeps sliding.</p>
+  <p>The question this paper answers: <em>does a model trained on observed signals rank declining pages at the top of a reviewer queue better than the existing rule, and is the gain honest when validated on never-seen clients?</em> The unit of analysis is the content page; the output is a 0–100 refresh score; the human action is "open this page and decide"; the cost of a wrong call is wasted editorial effort or a missed decline.</p>
+</section>
+
+<section>
+  <h2 id="data">2. Data</h2>
+  <p><strong>Release.</strong> The bundled anonymized starter release of the FlyRank ML Internship dataset: <code>data/raw/content_refresh_anonymized.csv</code> — one row per pseudonymized content item.</p>
+  <ul>
+    <li><strong>Size:</strong> 30,000 rows × 44 raw columns (52 after feature prep), covering <strong>32 pseudonymized clients</strong>.</li>
+    <li><strong>Time window:</strong> all metrics are aggregates over a single trailing-90-day window ending at export time; 30-day comparison windows (last vs previous) drive the trend label.</li>
+    <li><strong>What is measured:</strong> search impressions/clicks and position (Google Search Console), sessions/pageviews/engagement and AI-referred sessions (Google Analytics), plus content metadata — age, freshness, word/char counts, keyword context (search volume, competition, CPC), and derived rates.</li>
+    <li><strong>Public-safe exclusions:</strong> the export ships <em>no</em> client names, domains, URLs, page titles, keywords, or raw queries. Only hashed pseudonymous IDs (<code>content_id</code> / <code>client_id</code>) remain, used for grouping and splitting only — never as features.</li>
+  </ul>
+  <p><strong>Label source.</strong> The target <code>is_declining_label</code> is derived from <code>trend_direction == "down"</code>, itself computed from the last-30d vs prev-30d impressions comparison (16,262 of 30,000 rows, <strong>54.2% base rate</strong>).</p>
+</section>
+
+<section>
+  <h2 id="methodology">3. Methodology</h2>
+  <h3>Assumptions</h3>
+  <ul>
+    <li>Observed decline in this snapshot is a fair proxy for "worth an editor's time"; we rank it, we do not forecast it.</li>
+    <li>Rate columns are percentages on a 0–100 scale (<code>ctr = 0.76</code> means 0.76%), and <code>avg_position = 0</code> means "no position data", not rank zero — we add a <code>has_position_data</code>-style flag rather than imputing blindly.</li>
+    <li>Missingness is systematic by content type, so indicators beat blind <code>fillna(0)</code>.</li>
+  </ul>
+  <h3>Features</h3>
+  <p>18 numeric + 8 categorical features, defined in one place (<code>scripts/ml_utils.py</code>): visibility and reach (<code>log_impressions_90d</code>, <code>log_clicks_90d</code>, <code>days_with_impressions</code>), position (<code>avg_position</code>, <code>position_tier</code>), staleness and age (<code>content_age_days</code>, <code>days_since_last_update</code>, <code>age_tier</code>, <code>freshness_tier</code>), engagement (<code>ctr</code>, <code>scroll_rate</code>, <code>engagement_rate</code>, <code>ai_traffic_pct</code>), article shape (<code>word_count</code>, <code>char_count</code>, <code>word_count_tier</code>), and keyword context (<code>search_volume</code>, <code>competition</code>, <code>competition_level</code>, <code>main_intent</code>, <code>content_type</code>).</p>
+  <h3>Label definition</h3>
+  <p>One sentence: <em>a page is labeled declining (1) when its observed last-30d impressions dropped ≥20% versus the prior 30 days (<code>trend_direction == "down"</code>), else 0.</em></p>
+  <h3>Baseline</h3>
+  <p>The Week-4 transparent rule: a hand-written threshold score (visibility, staleness, position rules) that produces the same ranked queue, evaluated on the <em>same</em> held-out clients and the same metric.</p>
+  <h3>Validation design</h3>
+  <p>Because pages from one client share a publisher, cadence, and query mix, a random row split would let the model memorize clients. We split <strong>by client</strong>: hold out ~20% of the 32 clients (6) entirely, train on the remaining 27,675 rows, evaluate on 2,325. A grouped 5-fold (every client held out once) is run as a robustness check and reported alongside.</p>
+  <h3>Leakage checks</h3>
+  <ul>
+    <li><code>trend_direction</code>, <code>trend_pct</code>, and both 30-day comparison windows that compute the label are <strong>never</strong> features.</li>
+    <li><code>content_id</code> / <code>client_id</code> are grouping/splitting only, never features.</li>
+    <li>All three leakage classes (label-derived siblings, overlapping windows, existing product flags) were audited; the product's own decision flags (<code>health_score</code>, etc.) are not even shipped in the release.</li>
+  </ul>
+</section>
+
+<section>
+  <h2 id="results">4. Results (model vs baseline, same split)</h2>
+  <p>All numbers below are the committed reference-pipeline receipts (<code>outputs/model_results.json</code>): every model and the baseline were scored on the <strong>identical client-holdout test set</strong> (2,325 rows from 6 held-out clients). Base rate is shown so no number floats.</p>
+  <table>
+    <tr><th>Model</th><th>ROC AUC</th><th>Avg precision</th><th>P@20</th><th>P@50</th><th>P@100</th></tr>
+    <tr><td>Baseline rule</td><td>0.627</td><td>0.468</td><td>0.15</td><td>0.24</td><td>0.36</td></tr>
+    <tr><td>Logistic regression</td><td>0.700</td><td>0.522</td><td>0.35</td><td>0.40</td><td>0.44</td></tr>
+    <tr><td>Decision tree</td><td>0.742</td><td>0.575</td><td>0.55</td><td>0.62</td><td>0.60</td></tr>
+    <tr><td><strong>Random Forest (selected)</strong></td><td><strong>0.750</strong></td><td><strong>0.618</strong></td><td><strong>0.65</strong></td><td><strong>0.74</strong></td><td><strong>0.72</strong></td></tr>
+  </table>
+  <p class="note">Base rate of decline on this data: 54.2%. Precision at the top is the honest discrimination number for a reviewer queue.</p>
+  <figure>
+    <svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520">
+    <rect width="100%" height="100%" fill="#ffffff"/>
+    <text x="480" y="34" text-anchor="middle" font-family="Arial" font-size="24" fill="#16232a">Precision@K on held-out clients (model vs baseline rule)</text>
+    <line x1="170" y1="460.0" x2="880" y2="460.0" stroke="#e3e6e8" stroke-width="1"/>
+    <text x="162" y="464.0" text-anchor="end" font-family="Arial" font-size="12" fill="#27343b">0%</text>
+    <line x1="170" y1="365.0" x2="880" y2="365.0" stroke="#e3e6e8" stroke-width="1"/>
+    <text x="162" y="369.0" text-anchor="end" font-family="Arial" font-size="12" fill="#27343b">25%</text>
+    <line x1="170" y1="270.0" x2="880" y2="270.0" stroke="#e3e6e8" stroke-width="1"/>
+    <text x="162" y="274.0" text-anchor="end" font-family="Arial" font-size="12" fill="#27343b">50%</text>
+    <line x1="170" y1="175.0" x2="880" y2="175.0" stroke="#e3e6e8" stroke-width="1"/>
+    <text x="162" y="179.0" text-anchor="end" font-family="Arial" font-size="12" fill="#27343b">75%</text>
+    <line x1="170" y1="80.0" x2="880" y2="80.0" stroke="#e3e6e8" stroke-width="1"/>
+    <text x="162" y="84.0" text-anchor="end" font-family="Arial" font-size="12" fill="#27343b">100%</text>
+    <line x1="170" y1="254.0" x2="880" y2="254.0" stroke="#B07AA1" stroke-width="2" stroke-dasharray="6 4"/>
+    <text x="780" y="248.0" text-anchor="start" font-family="Arial" font-size="12" fill="#B07AA1">base rate 54.2%</text>
+    <text x="288.3" y="482" text-anchor="middle" font-family="Arial" font-size="14" fill="#16232a">K=20</text>
+    <text x="250.3" y="476.0" text-anchor="middle" font-family="Arial" font-size="11" fill="#426B69">baseline</text>
+    <text x="326.3" y="476.0" text-anchor="middle" font-family="Arial" font-size="11" fill="#4E79A7">model</text>
+    <rect x="217.3" y="403.0" width="66.0" height="57.0" fill="#426B69" rx="4"/>
+    <rect x="293.3" y="213.0" width="66.0" height="247.0" fill="#4E79A7" rx="4"/>
+    <text x="250.3" y="397.0" text-anchor="middle" font-family="Arial" font-size="12" fill="#16232a">15%</text>
+    <text x="326.3" y="207.0" text-anchor="middle" font-family="Arial" font-size="12" fill="#16232a">65%</text>
+    <text x="525.0" y="482" text-anchor="middle" font-family="Arial" font-size="14" fill="#16232a">K=50</text>
+    <text x="487.0" y="476.0" text-anchor="middle" font-family="Arial" font-size="11" fill="#426B69">baseline</text>
+    <text x="563.0" y="476.0" text-anchor="middle" font-family="Arial" font-size="11" fill="#4E79A7">model</text>
+    <rect x="454.0" y="368.8" width="66.0" height="91.2" fill="#426B69" rx="4"/>
+    <rect x="530.0" y="178.8" width="66.0" height="281.2" fill="#4E79A7" rx="4"/>
+    <text x="487.0" y="362.8" text-anchor="middle" font-family="Arial" font-size="12" fill="#16232a">24%</text>
+    <text x="563.0" y="172.8" text-anchor="middle" font-family="Arial" font-size="12" fill="#16232a">74%</text>
+    <text x="761.7" y="482" text-anchor="middle" font-family="Arial" font-size="14" fill="#16232a">K=100</text>
+    <text x="723.7" y="476.0" text-anchor="middle" font-family="Arial" font-size="11" fill="#426B69">baseline</text>
+    <text x="799.7" y="476.0" text-anchor="middle" font-family="Arial" font-size="11" fill="#4E79A7">model</text>
+    <rect x="690.7" y="323.2" width="66.0" height="136.8" fill="#426B69" rx="4"/>
+    <rect x="766.7" y="186.4" width="66.0" height="273.6" fill="#4E79A7" rx="4"/>
+    <text x="723.7" y="317.2" text-anchor="middle" font-family="Arial" font-size="12" fill="#16232a">36%</text>
+    <text x="799.7" y="180.4" text-anchor="middle" font-family="Arial" font-size="12" fill="#16232a">72%</text>
+    </svg>
+    <figcaption>On the same held-out clients, the model's edge concentrates at the top of the queue — 74% of its top-50 are truly declining vs 24% for the rule (base rate 54.2%).</figcaption>
+  </figure>
+
+  <h3>What the model leans on</h3>
+  <p>Feature importances show decline is read from <em>visibility, reach, age, and position</em> — not from the label's own columns. The top drivers are how many days a page appeared in search, its total impressions, its average position, and how old it is.</p>
+  <figure>
+    <svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520">
+    <rect width="100%" height="100%" fill="#ffffff"/>
+    <text x="480.0" y="34" text-anchor="middle" font-family="Arial" font-size="24" fill="#16232a">Top model features</text>
+    <text x="178" y="85.7" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">days_with_impressions</text>
+    <rect x="190" y="70.0" width="115.4" height="24.2" fill="#4E79A7" rx="4"/>
+    <text x="313.4" y="85.7" font-family="Arial" font-size="13" fill="#27343b">0.158</text>
+    <text x="178" y="119.9" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">log_impressions_90d</text>
+    <rect x="190" y="104.2" width="93.9" height="24.2" fill="#4E79A7" rx="4"/>
+    <text x="291.9" y="119.9" font-family="Arial" font-size="13" fill="#27343b">0.129</text>
+    <text x="178" y="154.0" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">avg_position</text>
+    <rect x="190" y="138.3" width="79.7" height="24.2" fill="#4E79A7" rx="4"/>
+    <text x="277.7" y="154.0" font-family="Arial" font-size="13" fill="#27343b">0.109</text>
+    <text x="178" y="188.2" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">content_age_days</text>
+    <rect x="190" y="172.5" width="69.5" height="24.2" fill="#4E79A7" rx="4"/>
+    <text x="267.5" y="188.2" font-family="Arial" font-size="13" fill="#27343b">0.0952</text>
+    <text x="178" y="222.4" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">char_count</text>
+    <rect x="190" y="206.7" width="31.1" height="24.2" fill="#4E79A7" rx="4"/>
+    <text x="229.1" y="222.4" font-family="Arial" font-size="13" fill="#27343b">0.0426</text>
+    <text x="178" y="256.5" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">word_count</text>
+    <rect x="190" y="240.8" width="28.9" height="24.2" fill="#4E79A7" rx="4"/>
+    <text x="226.9" y="256.5" font-family="Arial" font-size="13" fill="#27343b">0.0396</text>
+    <text x="178" y="290.7" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">log_clicks_90d</text>
+    <rect x="190" y="275.0" width="25.2" height="24.2" fill="#4E79A7" rx="4"/>
+    <text x="223.2" y="290.7" font-family="Arial" font-size="13" fill="#27343b">0.0345</text>
+    <text x="178" y="324.9" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">ctr</text>
+    <rect x="190" y="309.2" width="24.3" height="24.2" fill="#4E79A7" rx="4"/>
+    <text x="222.3" y="324.9" font-family="Arial" font-size="13" fill="#27343b">0.0333</text>
+    <text x="178" y="359.0" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">scroll_rate</text>
+    <rect x="190" y="343.3" width="22.8" height="24.2" fill="#4E79A7" rx="4"/>
+    <text x="220.8" y="359.0" font-family="Arial" font-size="13" fill="#27343b">0.0312</text>
+    <text x="178" y="393.2" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">days_with_sessions</text>
+    <rect x="190" y="377.5" width="20.4" height="24.2" fill="#4E79A7" rx="4"/>
+    <text x="218.4" y="393.2" font-family="Arial" font-size="13" fill="#27343b">0.028</text>
+    <text x="178" y="427.4" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">position_tier_top_3</text>
+    <rect x="190" y="411.7" width="19.2" height="24.2" fill="#4E79A7" rx="4"/>
+    <text x="217.2" y="427.4" font-family="Arial" font-size="13" fill="#27343b">0.0262</text>
+    <text x="178" y="461.5" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">log_sessions_90d</text>
+    <rect x="190" y="445.8" width="16.5" height="24.2" fill="#4E79A7" rx="4"/>
+    <text x="214.5" y="461.5" font-family="Arial" font-size="13" fill="#27343b">0.0226</text>
+    </svg>
+    <figcaption>Decline is predicted from visibility, reach, position, and age — no label-derived or identifier columns appear.</figcaption>
+  </figure>
+
+  <h3>Honesty check: the out-of-group estimate</h3>
+  <p>One holdout fold is hostage to which clients drew the short straw. A grouped 5-fold in which every client is held out once gives the sober numbers: precision@50 <strong>≈ 0.6</strong> (vs 0.54 base rate), precision@10 ≈ 0.5, average precision ≈ 0.68. The single-holdout 0.74 at P@50 is therefore best read as an <em>upper</em> estimate; the repeatable claim is a <strong>directional 1.5–3× lift at the top of the queue depending on K</strong>.</p>
+</section>
+
+<section>
+  <h2 id="limitations">5. Limitations &amp; honest framing</h2>
+  <ul>
+    <li><strong>Observational, not causal.</strong> We rank pages that were <em>observed declining</em> in one snapshot. Nothing here proves that refreshing a page lifts it — no controlled experiment was run. Refreshing is a recommendation, not a measured effect.</li>
+    <li><strong>Not a forecast.</strong> The model does not predict Google's algorithm. It generalizes across held-out clients in this release; the future is unobserved.</li>
+    <li><strong>Weakest at the very top.</strong> The first ~10 rows of the queue are only ~50% precise — the pages that seem most urgent need the most careful human eyes.</li>
+    <li><strong>Thin, noisy low-position pages.</strong> Pages buried in search carry the noisiest measurements; the model misses most true declines there (its deepest error cell).</li>
+    <li><strong>No position data is not rank zero.</strong> 1,205 rows with <code>avg_position = 0</code> cannot be judged on rank and stay in "monitor" for human eyes only.</li>
+    <li><strong>Single snapshot, single release.</strong> One 90-day window and one anonymized slice; results are directional until re-run on fresh data with the drift triggers below.</li>
+  </ul>
+</section>
+
+<section>
+  <h2 id="recommendations">6. Ranked recommendations (action playbook)</h2>
+  <p>Scored with the validated model and tagged with a reason and a plain action, the 30,000 pages split into a reviewable queue:</p>
+  <ul>
+    <li><strong>1. Start with the 3,602 high-confidence pages.</strong> These are visible-and-declining pages the rule and model agree on. An editor opens each, confirms the reason code is real, and edits. This is where measured precision is highest (≈70% within rule-flagged pages).</li>
+    <li><strong>2. Within them, refresh + review CTR first.</strong> 6,654 pages are "refresh and review CTR" (visible, low-CTR, declining) — the biggest actionable band; the top of the queue is dominated by <code>refresh_and_review_ctr</code>. Then the 1,993 "refresh and review engagement" pages.</li>
+    <li><strong>3. Target the 91–180-day untouched pool.</strong> Among visible pages untouched for a quarter, 62% were observed declining (n=6,558) — the largest measurable decay pool. Stale-visible pages get <code>refresh</code>.</li>
+    <li><strong>4. Let reason codes route the work.</strong> The mix: monitor 13,083 · refresh 8,188 · refresh+review CTR 6,654 · refresh+review engagement 1,993 · expand 82.</li>
+    <li><strong>5. Keep a human gate on everything.</strong> Read, don't run: no auto-edit, no auto-publish; 339 visible declining top-3 pages are frozen behind sign-off; no verdict on pages without position data; no client-facing claim from one snapshot.</li>
+    <li><strong>6. Watch the drift triggers.</strong> Retrain if the next snapshot's precision@50 drops below 0.55, the base rate leaves 54–59%, the top-10% score threshold moves ±3pts, or any input column changes meaning.</li>
+  </ul>
+  <figure>
+    <svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520">
+    <rect width="100%" height="100%" fill="#ffffff"/>
+    <text x="480.0" y="34" text-anchor="middle" font-family="Arial" font-size="24" fill="#16232a">Suggested action mix</text>
+    <text x="178" y="116.8" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">monitor</text>
+    <rect x="190" y="70.0" width="730.0" height="72.0" fill="#426B69" rx="4"/>
+    <text x="928.0" y="116.8" font-family="Arial" font-size="13" fill="#27343b">1.31e+04</text>
+    <text x="178" y="198.8" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">refresh</text>
+    <rect x="190" y="152.0" width="456.9" height="72.0" fill="#426B69" rx="4"/>
+    <text x="654.9" y="198.8" font-family="Arial" font-size="13" fill="#27343b">8.19e+03</text>
+    <text x="178" y="280.8" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">refresh_and_review_ctr</text>
+    <rect x="190" y="234.0" width="371.3" height="72.0" fill="#426B69" rx="4"/>
+    <text x="569.3" y="280.8" font-family="Arial" font-size="13" fill="#27343b">6.65e+03</text>
+    <text x="178" y="362.8" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">refresh_and_review_engagement</text>
+    <rect x="190" y="316.0" width="111.2" height="72.0" fill="#426B69" rx="4"/>
+    <text x="309.2" y="362.8" font-family="Arial" font-size="13" fill="#27343b">1.99e+03</text>
+    <text x="178" y="444.8" text-anchor="end" font-family="Arial" font-size="13" fill="#27343b">expand_and_refresh</text>
+    <rect x="190" y="398.0" width="4.6" height="72.0" fill="#426B69" rx="4"/>
+    <text x="202.6" y="444.8" font-family="Arial" font-size="13" fill="#27343b">82</text>
+    </svg>
+    <figcaption>Most pages should be monitored; the actionable work sits in the refresh bands, led by low-CTR visible pages.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2 id="reproducibility">7. Reproducibility</h2>
+  <p>This paper mirrors the capstone notebook, which runs end-to-end and produces every number above from a fresh clone:</p>
+  <ul>
+    <li><strong>Notebooks</strong> (run top to bottom): <code>work/notebooks/capstone.ipynb</code> — <a href="https://github.com/karthikmannam/flyrank-internship-ml/blob/main/work/notebooks/capstone.ipynb">view</a> · <a href="https://colab.research.google.com/github/karthikmannam/flyrank-internship-ml/blob/main/work/notebooks/capstone.ipynb?flush_cache=true">open in Colab</a>. Supporting week notebooks: <code>w05_model.ipynb</code>, <code>w06_validation_audit.ipynb</code>, <code>w07_action_playbook.ipynb</code>.</li>
+    <li><strong>Reference pipeline</strong> (the baseline you compare against): <code>python scripts/run_all.py</code> — ~1 minute on the bundled sample, seeds locked. Committed receipts: <code>outputs/model_results.json</code>, <code>outputs/summary.json</code>, <code>outputs/model_report.md</code>.</li>
+    <li><strong>Validation receipts:</strong> <code>work/outputs/w05_model_results.json</code>, <code>w06_validation_results.json</code>, <code>w07_action_playbook.json</code>.</li>
+    <li><strong>Dependencies:</strong> pandas, numpy, scikit-learn, duckdb (see <code>requirements.txt</code>). Random seed fixed to <code>42</code>.</li>
+    <li><strong>Data:</strong> the bundled anonymized starter slice <code>data/raw/content_refresh_anonymized.csv</code> (30,000 × 44). No datasets are committed beyond it.</li>
+  </ul>
+</section>
+
+<section>
+  <h2 id="acknowledgments">8. Acknowledgments &amp; data credit</h2>
+  <div class="credit">
+    <p>Built on the <a href="https://flyrank.ai">FlyRank ML Internship dataset</a> — a pseudonymized, public-safe release of Google Search Console and Google Analytics content-performance data, provided for the FlyRank ML internship. The hashed identifiers are pseudonymous and used for grouping/validation only; no client-identifying information is included or disclosed.</p>
+  </div>
+</section>
+
+<footer class="note">
+  <p style="margin-top:30px;">Observed · measured · directional · decision-support. No causal claims, no forecasts of Google's algorithm. Repo: <a href="https://github.com/karthikmannam/flyrank-internship-ml">github.com/karthikmannam/flyrank-internship-ml</a></p>
+</footer>
+
+</div>
+</body>
+</html>
